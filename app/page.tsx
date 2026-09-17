@@ -268,7 +268,7 @@ export default function AdminDashboard() {
                   whiteSpace: 'nowrap',
                 }}
               >
-                {s.submitted ? '✓ Submitted' : 'Not yet'}
+                {s.submitted ? '✓ Received' : 'Not yet'}
               </span>
 
               {s.submitted && (
