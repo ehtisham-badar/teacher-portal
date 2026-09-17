@@ -119,19 +119,6 @@ export async function getSubmissionBytes(
   return { buffer, filename: student.filename || `${rollNumber}.docx` };
 }
 
-/** Deletes a student's submission (if any) and drops their roster row entirely. */
-export async function removeStudent(rollNumber: string): Promise<Student[]> {
-  try {
-    await del(submissionPath(rollNumber));
-  } catch {
-    // no submission to delete -- fine
-  }
-  const roster = await getRoster();
-  const updated = roster.filter((s) => s.rollNumber !== rollNumber);
-  await saveRoster(updated);
-  return updated;
-}
-
 /** Adds a new student to the roster (used by the admin "Add student" form). */
 export async function addStudent(rollNumber: string, name: string): Promise<Student[]> {
   const roster = await getRoster();
