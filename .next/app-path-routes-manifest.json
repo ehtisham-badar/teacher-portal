@@ -1,0 +1,14 @@
+{
+  "/_global-error/page": "/_global-error",
+  "/_not-found/page": "/_not-found",
+  "/api/add-student/route": "/api/add-student",
+  "/api/download-all/route": "/api/download-all",
+  "/api/download/route": "/api/download",
+  "/api/login/route": "/api/login",
+  "/api/logout/route": "/api/logout",
+  "/api/remove-student/route": "/api/remove-student",
+  "/api/remove-submission/route": "/api/remove-submission",
+  "/api/roster/route": "/api/roster",
+  "/login/page": "/login",
+  "/page": "/"
+}
