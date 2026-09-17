@@ -14,6 +14,7 @@ export default function AdminDashboard() {
   const [roster, setRoster] = useState<Student[] | null>(null);
   const [query, setQuery] = useState('');
   const [busyRoll, setBusyRoll] = useState<string | null>(null);
+  const [removingRoll, setRemovingRoll] = useState<string | null>(null);
   const [zipBusy, setZipBusy] = useState(false);
   const [banner, setBanner] = useState<{ text: string; kind: 'ok' | 'err' } | null>(null);
   const [newRoll, setNewRoll] = useState('');
@@ -55,6 +56,29 @@ export default function AdminDashboard() {
       flash(err instanceof Error ? err.message : 'Failed.', 'err');
     } finally {
       setBusyRoll(null);
+    }
+  }
+
+  async function handleRemoveStudent(rollNumber: string, name: string) {
+    const ok = window.confirm(
+      `Remove ${name} (${rollNumber}) from the roster? This permanently deletes their submission, if any, and cannot be undone.`,
+    );
+    if (!ok) return;
+    setRemovingRoll(rollNumber);
+    try {
+      const res = await fetch('/api/remove-student', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rollNumber }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not remove student.');
+      setRoster(data.roster);
+      flash(`Removed ${name}.`);
+    } catch (err) {
+      flash(err instanceof Error ? err.message : 'Failed.', 'err');
+    } finally {
+      setRemovingRoll(null);
     }
   }
 
@@ -257,6 +281,13 @@ export default function AdminDashboard() {
                   </button>
                 </>
               )}
+              <button
+                onClick={() => handleRemoveStudent(s.rollNumber, s.name)}
+                disabled={removingRoll === s.rollNumber}
+                style={pillBtn(removingRoll === s.rollNumber ? '#9CA3AF' : '#7F1D1D')}
+              >
+                {removingRoll === s.rollNumber ? 'Removing…' : 'Remove'}
+              </button>
             </div>
           );
         })}
