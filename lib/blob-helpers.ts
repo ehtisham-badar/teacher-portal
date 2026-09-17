@@ -37,6 +37,25 @@ async function fetchBlobBuffer(pathname: string): Promise<Buffer | null> {
   return Buffer.from(arrayBuf);
 }
 
+async function blobExists(pathname: string): Promise<boolean> {
+  const result = await get(pathname, { access: 'public', useCache: false });
+  return result !== null;
+}
+
+/**
+ * Retries `check` (a cache-bypassing read) until it reports the change has
+ * landed, instead of trusting the write call alone. Used after a delete so
+ * callers only report success -- and the UI only refreshes its list -- once
+ * storage actually reflects the removal.
+ */
+async function pollUntil(check: () => Promise<boolean>, attempts = 5, delayMs = 300): Promise<boolean> {
+  for (let i = 0; i < attempts; i++) {
+    if (await check()) return true;
+    if (i < attempts - 1) await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+  return false;
+}
+
 /**
  * Reads the roster+submission-status "database" from Blob storage.
  * On first run (no roster blob exists yet), self-seeds from SEED_STUDENTS
@@ -81,13 +100,23 @@ export async function saveSubmission(
   return updated;
 }
 
-/** Deletes a student's stored submission and marks them not-submitted. */
+/**
+ * Deletes a student's stored submission and marks them not-submitted. Only
+ * resolves once the file's deletion and the roster update are both confirmed
+ * by a fresh read from storage -- the caller (and the UI's list refresh)
+ * should never see this succeed on an assumption alone.
+ */
 export async function removeSubmission(rollNumber: string): Promise<Student[]> {
   try {
     await del(submissionPath(rollNumber));
   } catch {
     // already gone -- fine, still clear the roster flag below
   }
+  const fileGone = await pollUntil(async () => !(await blobExists(submissionPath(rollNumber))));
+  if (!fileGone) {
+    throw new Error('Could not confirm the file was deleted from storage. Please try again.');
+  }
+
   const roster = await getRoster();
   const updated = roster.map((s) =>
     s.rollNumber === rollNumber
@@ -95,7 +124,20 @@ export async function removeSubmission(rollNumber: string): Promise<Student[]> {
       : s,
   );
   await saveRoster(updated);
-  return updated;
+
+  let verified: Student[] | null = null;
+  await pollUntil(async () => {
+    const check = await getRoster();
+    if (!check.some((s) => s.rollNumber === rollNumber && s.submitted)) {
+      verified = check;
+      return true;
+    }
+    return false;
+  });
+  if (!verified) {
+    throw new Error('Could not confirm the removal was saved. Please try again.');
+  }
+  return verified;
 }
 
 /** Fetches one student's submitted .docx bytes, for review/download. */
@@ -110,17 +152,39 @@ export async function getSubmissionBytes(
   return { buffer, filename: student.filename || `${rollNumber}.docx` };
 }
 
-/** Deletes a student's submission (if any) and drops their roster row entirely. */
+/**
+ * Deletes a student's submission (if any) and drops their roster row
+ * entirely. Only resolves once both the file's deletion and the roster
+ * update are confirmed by a fresh read from storage.
+ */
 export async function removeStudent(rollNumber: string): Promise<Student[]> {
   try {
     await del(submissionPath(rollNumber));
   } catch {
     // no submission to delete -- fine
   }
+  const fileGone = await pollUntil(async () => !(await blobExists(submissionPath(rollNumber))));
+  if (!fileGone) {
+    throw new Error('Could not confirm the file was deleted from storage. Please try again.');
+  }
+
   const roster = await getRoster();
   const updated = roster.filter((s) => s.rollNumber !== rollNumber);
   await saveRoster(updated);
-  return updated;
+
+  let verified: Student[] | null = null;
+  await pollUntil(async () => {
+    const check = await getRoster();
+    if (!check.some((s) => s.rollNumber === rollNumber)) {
+      verified = check;
+      return true;
+    }
+    return false;
+  });
+  if (!verified) {
+    throw new Error('Could not confirm the student was removed from the roster. Please try again.');
+  }
+  return verified;
 }
 
 /** Adds a new student to the roster (used by the admin "Add student" form). */
