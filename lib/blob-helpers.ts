@@ -1,4 +1,4 @@
-import { put, del, head, BlobNotFoundError } from '@vercel/blob';
+import { put, del, get } from '@vercel/blob';
 import { SEED_STUDENTS } from './seed-data';
 
 export type Student = {
@@ -12,38 +12,29 @@ export type Student = {
 const ROSTER_PATH = 'data/students.json';
 const submissionPath = (rollNumber: string) => `submissions/${rollNumber}.docx`;
 
-// NOTE on access level: blobs are stored with access: 'public'. The installed
-// @vercel/blob SDK (v2.x) has no get()/content-read function -- only head()
-// (metadata + URL), list(), put(), del(), copy(). Reading actual bytes back
-// means resolving the URL via head() and then plain fetch()-ing it. Public
-// access keeps that fetch a normal unauthenticated request; each blob's URL
-// still contains a long random per-store hash, so it isn't publicly
-// *discoverable*, just not cryptographically access-controlled. Good enough
-// for a classroom tool -- worth knowing if you're storing anything sensitive.
+// NOTE on access level: blobs are stored with access: 'public' (URLs aren't
+// publicly discoverable -- each has a long random per-store hash -- but
+// they're not cryptographically access-controlled either. Fine for a
+// classroom tool, worth upgrading if this ever stores something sensitive.
+//
+// NOTE on useCache: false -- roster/submission blobs are overwritten in place
+// at the same pathname (allowOverwrite: true) on every change. Vercel's CDN
+// can keep serving the pre-overwrite bytes for up to ~60s after a write, so a
+// plain read right after a change (e.g. remove a student, then reload) could
+// come back stale. useCache: false forces the read to skip the CDN and hit
+// origin storage directly.
 
 async function fetchBlobText(pathname: string): Promise<string | null> {
-  try {
-    const meta = await head(pathname);
-    const res = await fetch(meta.url, { cache: 'no-store' });
-    if (!res.ok) return null;
-    return await res.text();
-  } catch (err) {
-    if (err instanceof BlobNotFoundError) return null;
-    throw err;
-  }
+  const result = await get(pathname, { access: 'public', useCache: false });
+  if (!result || result.statusCode !== 200) return null;
+  return await new Response(result.stream).text();
 }
 
 async function fetchBlobBuffer(pathname: string): Promise<Buffer | null> {
-  try {
-    const meta = await head(pathname);
-    const res = await fetch(meta.url, { cache: 'no-store' });
-    if (!res.ok) return null;
-    const arrayBuf = await res.arrayBuffer();
-    return Buffer.from(arrayBuf);
-  } catch (err) {
-    if (err instanceof BlobNotFoundError) return null;
-    throw err;
-  }
+  const result = await get(pathname, { access: 'public', useCache: false });
+  if (!result || result.statusCode !== 200) return null;
+  const arrayBuf = await new Response(result.stream).arrayBuffer();
+  return Buffer.from(arrayBuf);
 }
 
 /**
